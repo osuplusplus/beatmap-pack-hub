@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "beatmap-pack-hub",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-08-16",
+  "send_metrics": false,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "beatmap-pack-hub",
+      "database_id": "replace-with-your-d1-database-id",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

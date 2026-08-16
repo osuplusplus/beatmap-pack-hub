@@ -1,0 +1,7 @@
+node_modules/
+.wrangler/
+dist/
+dist-worker/
+coverage/
+.dev.vars
+*.log
