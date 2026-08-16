@@ -8,7 +8,7 @@
     {
       "binding": "DB",
       "database_name": "beatmap-pack-hub",
-      "database_id": "replace-with-your-d1-database-id",
+      "database_id": "1362efe0-ae7d-4c2b-b12a-28a42f56e073",
       "migrations_dir": "migrations"
     }
   ]
