@@ -1,5 +1,5 @@
 import type { PackRepository } from "../../src/repositories/pack-repository";
-import type { PackCreateData, PackRecord, PackUpdateData } from "../../src/types";
+import type { PackCreateData, PackRecord, PackUpdateData, PackViewerState } from "../../src/types";
 
 interface StoredPack extends Omit<PackRecord, "ownerDisplayName" | "ratingAverage" | "ratingCount"> {}
 
@@ -44,6 +44,13 @@ export class MemoryPackRepository implements PackRepository {
       ownerDisplayName: this.users.get(pack.ownerId)!,
       ratingAverage: scores.length ? scores.reduce((sum, score) => sum + score, 0) / scores.length : 0,
       ratingCount: scores.length,
+    };
+  }
+
+  async getViewerState(internalId: string, userId: string): Promise<PackViewerState> {
+    return {
+      rating: this.ratings.get(internalId)?.get(userId) ?? null,
+      favorited: this.favorites.has(`${internalId}:${userId}`),
     };
   }
 

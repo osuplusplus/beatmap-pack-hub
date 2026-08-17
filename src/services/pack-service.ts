@@ -39,9 +39,13 @@ export class PackService {
     return { id: shareId };
   }
 
-  async get(shareId: string) {
+  async get(shareId: string, viewerId: string | null = null) {
     const pack = await this.repository.findByShareId(shareId);
     if (!pack) throw notFound();
+    if (viewerId) await this.assertUser(viewerId);
+    const viewer = viewerId
+      ? await this.repository.getViewerState(pack.internalId, viewerId)
+      : null;
     return {
       id: pack.shareId,
       title: pack.title,
@@ -53,6 +57,13 @@ export class PackService {
         average: pack.ratingCount === 0 ? null : Number(pack.ratingAverage.toFixed(2)),
         count: pack.ratingCount,
       },
+      ...(viewerId && viewer ? {
+        viewer: {
+          rating: viewer.rating,
+          favorited: viewer.favorited,
+          can_edit: pack.ownerId === viewerId,
+        },
+      } : {}),
       created_at: pack.createdAt,
       updated_at: pack.updatedAt,
     };

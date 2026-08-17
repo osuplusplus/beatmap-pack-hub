@@ -19,7 +19,7 @@ OPP 检查本地并下载缺失谱面
 ```
 
 > [!WARNING]
-> 当前项目使用 Phase 1 开发身份：客户端通过 `X-BPH-User-ID` 请求头声明用户。它只适合开发、联调和受控测试，不能作为正式生产认证。公开运营前必须接入计划中的 Ed25519 Challenge-Response 认证。
+> Ed25519 Challenge-Response 已实现。`X-BPH-User-ID` 只是在 `ALLOW_DEV_AUTH=true` 时启用的联调兼容方式；公开部署前必须将其设为 `false`，并始终使用 HTTPS。
 
 ## 核心原则
 
@@ -79,12 +79,14 @@ Pack ID Registry
 - [x] D1 migration、外键和索引
 - [x] 请求体及字段限制
 - [x] 统一 JSON 错误结构
+- [x] OPP 能力发现、CORS 预检和请求追踪 ID
+- [x] 当前用户的评分、收藏及编辑权限状态
+- [x] 首次握手建档、Ed25519 Challenge、Bearer Session 与多设备管理
 - [x] 单元测试和 API 集成测试
 - [x] Cloudflare Workers 部署配置
 
 后续规划：
 
-- [ ] Ed25519 公钥注册、Challenge-Response 和 Session
 - [ ] Pack Version
 - [ ] Comments、Tags、Search、Trending
 - [ ] 举报、统计、关注和通知
@@ -107,15 +109,18 @@ Pack ID Registry
 src/
 ├── app.ts                              HTTP 路由、请求解析和统一错误
 ├── config.ts                           集中管理输入限制和分享码配置
-├── domain/pack.ts                      分享码、保序去重和 manifest hash
+├── domain/                             分享码、manifest hash 和编码工具
 ├── repositories/
 │   ├── pack-repository.ts              数据访问接口
-│   └── d1-pack-repository.ts           D1 实现
-├── services/pack-service.ts            Pack 业务规则与权限检查
+│   ├── d1-pack-repository.ts           Pack D1 实现
+│   └── d1-auth-repository.ts           认证 D1 实现
+├── services/                           Pack 业务与 Challenge 认证
 ├── validation.ts                       Zod 输入验证
 └── index.ts                            Worker 入口
 
 migrations/0001_initial.sql             D1 Schema
+migrations/0002_challenge_auth.sql      Challenge 与 Session Schema
+migrations/0003_multi_device.sql         用户档案与多设备 Schema
 test/                                   单元测试和 API 集成测试
 ```
 
@@ -126,9 +131,16 @@ MVP 包含以下表：
 ```text
 users
 ├── id
-├── public_key
 ├── display_name
 └── created_at
+
+user_devices
+├── id
+├── user_id
+├── public_key
+├── device_name
+├── last_seen_at
+└── revoked_at
 
 packs
 ├── id                 内部 UUID
@@ -156,6 +168,28 @@ favorites
 ├── pack_id
 ├── user_id
 └── created_at
+
+auth_challenges
+├── id
+├── user_id
+├── device_id
+├── message
+├── expires_at
+└── used_at
+
+auth_sessions
+├── token_hash
+├── user_id
+├── device_id
+├── expires_at
+└── revoked_at
+
+device_link_tokens
+├── token_hash
+├── user_id
+├── issued_by_device_id
+├── expires_at
+└── used_at
 ```
 
 Pack Item 使用 `beatmapset_id`，因为 `.osz` 的下载单位通常是完整 BeatmapSet，而不是单个 Difficulty。
@@ -220,18 +254,39 @@ API Base Path：
 /api/v1
 ```
 
-当前所有写入接口都要求：
+认证成功后，Pack、评分、收藏和设备管理等受保护接口要求：
 
 ```http
-X-BPH-User-ID: dev-user
+Authorization: Bearer <access_token>
 ```
+
+本地联调仍可在 `ALLOW_DEV_AUTH=true` 时使用 `X-BPH-User-ID: dev-user`。
+
+### OPP 联调入口
+
+```http
+GET /api/v1
+```
+
+该接口返回 API 版本、认证方式、可用功能和输入限制。OPP 可以在启动联调时先调用它，尽早发现服务地址或协议版本配置错误。
+
+所有响应都会包含 `X-Request-ID`，出现服务端错误时可将该值与 Worker Logs 对照。API 支持跨域预检，允许 `Authorization`、`Content-Type`、`X-BPH-User-ID` 和 `X-Request-ID` 请求头。
+
+当前联调建议配置：
+
+```text
+Base URL: http://127.0.0.1:8787/api/v1
+Session header: Authorization: Bearer <access_token>
+```
+
+部署后只需将 Base URL 换成 HTTPS Worker 地址。认证不使用 Cookie，OPP 每次写请求以及需要 `viewer` 状态的读请求都应显式发送 Bearer Session。
 
 ### 创建 Pack
 
 ```http
 POST /api/v1/packs
 Content-Type: application/json
-X-BPH-User-ID: dev-user
+Authorization: Bearer <access_token>
 ```
 
 请求：
@@ -290,12 +345,26 @@ GET /api/v1/packs/:share_id
 
 没有评分时 `average` 为 `null`。
 
+如果请求携带有效的 Bearer Session，响应还会增加当前用户状态：
+
+```json
+{
+  "viewer": {
+    "rating": 5,
+    "favorited": true,
+    "can_edit": true
+  }
+}
+```
+
+未评分时 `viewer.rating` 为 `null`。不携带认证信息时 Pack 仍可公开读取，但不会返回 `viewer` 字段。Pack 读取响应使用 `Cache-Control: no-store`，避免不同用户状态被错误复用。
+
 ### 修改 Pack
 
 ```http
 PATCH /api/v1/packs/:share_id
 Content-Type: application/json
-X-BPH-User-ID: dev-user
+Authorization: Bearer <access_token>
 ```
 
 所有字段均可选，但至少需要提交一个字段：
@@ -314,7 +383,7 @@ X-BPH-User-ID: dev-user
 
 ```http
 DELETE /api/v1/packs/:share_id
-X-BPH-User-ID: dev-user
+Authorization: Bearer <access_token>
 ```
 
 只有 owner 可以删除。当前 MVP 使用硬删除，D1 外键会级联删除 items、ratings 和 favorites。
@@ -326,7 +395,7 @@ X-BPH-User-ID: dev-user
 ```http
 PUT /api/v1/packs/:share_id/rating
 Content-Type: application/json
-X-BPH-User-ID: dev-user
+Authorization: Bearer <access_token>
 ```
 
 ```json
@@ -343,7 +412,7 @@ X-BPH-User-ID: dev-user
 
 ```http
 PUT /api/v1/packs/:share_id/favorite
-X-BPH-User-ID: dev-user
+Authorization: Bearer <access_token>
 ```
 
 重复收藏是幂等操作。成功状态：`204 No Content`。
@@ -352,7 +421,7 @@ X-BPH-User-ID: dev-user
 
 ```http
 DELETE /api/v1/packs/:share_id/favorite
-X-BPH-User-ID: dev-user
+Authorization: Bearer <access_token>
 ```
 
 重复取消也是幂等操作。成功状态：`204 No Content`。
@@ -393,12 +462,23 @@ X-BPH-User-ID: dev-user
 |---:|---|---|
 | 400 | `INVALID_JSON` | 请求体不是有效 JSON |
 | 400 | `INVALID_SHARE_ID` | 分享 ID 格式错误 |
-| 401 | `AUTH_REQUIRED` | 缺少 Phase 1 身份请求头 |
+| 400 | `INVALID_PUBLIC_KEY` | Ed25519 公钥编码无效 |
+| 401 | `AUTH_REQUIRED` | 缺少 Bearer Session |
+| 401 | `AUTH_FAILED` | 公钥尚未注册 |
+| 401 | `INVALID_CHALLENGE` | Challenge 无效、过期或已使用 |
+| 401 | `INVALID_SIGNATURE` | Ed25519 签名验证失败 |
+| 401 | `INVALID_SESSION` | Session 无效、过期或已注销 |
+| 401 | `INVALID_DEVICE_LINK` | 设备链接凭证无效、过期或已使用 |
+| 401 | `DEV_AUTH_DISABLED` | 当前环境不允许开发身份头 |
 | 401 | `UNKNOWN_IDENTITY` | D1 中不存在该用户 |
+| 409 | `DEVICE_REGISTERED` | 设备公钥已经登记 |
+| 409 | `CANNOT_REVOKE_CURRENT_DEVICE` | 当前设备不能撤销自身 |
 | 403 | `NOT_PACK_OWNER` | 当前用户不是 Pack owner |
 | 404 | `PACK_NOT_FOUND` | Pack 不存在 |
+| 404 | `DEVICE_NOT_FOUND` | 设备不存在或不属于当前用户 |
 | 404 | `ROUTE_NOT_FOUND` | API 路由不存在 |
 | 413 | `BODY_TOO_LARGE` | 请求体超过限制 |
+| 415 | `UNSUPPORTED_MEDIA_TYPE` | JSON 写接口未声明 JSON Content-Type |
 | 422 | `VALIDATION_ERROR` | 字段验证失败 |
 | 500 | `INTERNAL_ERROR` | 未公开内部信息的服务器错误 |
 
@@ -489,13 +569,16 @@ Type: D1 database
 Database: beatmap-pack-hub
 ```
 
+同时确认环境变量 `ALLOW_DEV_AUTH=false`。仓库默认已经关闭开发身份头；只有受控的本地兼容测试才应临时启用它。
+
 ## 测试线上部署
 
 以下示例使用 Windows PowerShell。先替换 Worker 地址：
 
 ```powershell
 $baseUrl = "https://你的-worker地址.workers.dev"
-$headers = @{ "X-BPH-User-ID" = "dev-user" }
+$accessToken = "登录后返回的 access_token"
+$headers = @{ "Authorization" = "Bearer $accessToken" }
 ```
 
 健康检查：
@@ -585,31 +668,31 @@ npm run test:link
 - Favorite 幂等操作
 - 非法输入和不存在 Pack
 - 缺少认证信息
+- 首次握手自动创建用户档案和首台设备
+- Ed25519 持钥证明与 Challenge 签名
+- 多设备链接、列表与定向撤销
+- Challenge 重放阻断与 Session 注销
 - 内部错误不泄露给客户端
 
-## 身份认证路线
+## 用户档案与多设备认证
 
-当前开发认证仅用于 Phase 1。正式认证计划使用 Ed25519：
+`users` 表示稳定的用户档案，`user_devices` 表示属于该用户的设备。Pack owner、评分和收藏始终关联 `user_id`，因此同一档案下的多台设备共享社区数据；每台设备拥有独立 Ed25519 Key Pair 和 Session，可单独撤销。
 
 ```text
-OPP 首次启动生成 Ed25519 Key Pair
-Private Key 只保存在本地
-Public Key 注册到 BeatmapPackHub
-          ↓
-POST /api/v1/auth/challenge
-          ↓
-Client 对带 Domain Separation 的消息签名
-          ↓
-POST /api/v1/auth/verify
-          ↓
-Server 验证公钥、有效期和一次性 Challenge
-          ↓
-返回 Session / Token
+首次设备
+生成 Key Pair → 签署 Handshake → 创建用户档案 + 首台设备 + Session
+
+已有设备
+Challenge → 签名 → 获取该设备的新 Session
+
+增加设备
+旧设备创建一次性 link token → 新设备签署 Link Message
+→ 新设备加入同一用户档案并获得独立 Session
 ```
 
-Challenge 必须随机、短时间有效、只能使用一次，并在验证成功后立即失效。协议消息应带类似 `OPP_BPH_LOGIN_V1` 的用途前缀，避免签名跨业务复用。
+Challenge 有效期为 5 分钟，设备 link token 有效期为 10 分钟，二者均只能使用一次。Session 有效期为 1 小时，服务端只保存 token 的 SHA-256 哈希。撤销设备会同时撤销该设备的全部 Session，不影响同档案下其他设备。
 
-数字签名不能替代 TLS；生产服务始终必须使用 HTTPS。
+完整的消息格式、接口请求响应和 OPP 客户端状态机见 [`OPP_AUTH_INTEGRATION.md`](./OPP_AUTH_INTEGRATION.md)。数字签名不能替代 TLS；生产服务始终必须使用 HTTPS。
 
 ## OPP Deep Link 规划
 

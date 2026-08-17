@@ -4,6 +4,9 @@
   "main": "src/index.ts",
   "compatibility_date": "2025-08-16",
   "send_metrics": false,
+  "vars": {
+    "ALLOW_DEV_AUTH": "false"
+  },
   "d1_databases": [
     {
       "binding": "DB",

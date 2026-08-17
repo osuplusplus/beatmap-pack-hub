@@ -1,10 +1,11 @@
-import type { PackCreateData, PackRecord, PackUpdateData } from "../types";
+import type { PackCreateData, PackRecord, PackUpdateData, PackViewerState } from "../types";
 
 export interface PackRepository {
   userExists(userId: string): Promise<boolean>;
   shareIdExists(shareId: string): Promise<boolean>;
   create(data: PackCreateData): Promise<void>;
   findByShareId(shareId: string): Promise<PackRecord | null>;
+  getViewerState(internalId: string, userId: string): Promise<PackViewerState>;
   update(internalId: string, data: PackUpdateData): Promise<void>;
   delete(internalId: string): Promise<void>;
   upsertRating(internalId: string, userId: string, score: number, now: string): Promise<void>;

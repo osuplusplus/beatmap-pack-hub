@@ -3,7 +3,7 @@ import { createApp } from "../../src/app";
 import type { Env } from "../../src/types";
 import { MemoryPackRepository } from "../support/memory-pack-repository";
 
-const env = {} as Env;
+const env = { ALLOW_DEV_AUTH: "true" } as Env;
 
 describe("pack API", () => {
   let repository: MemoryPackRepository;
@@ -73,8 +73,51 @@ describe("pack API", () => {
     expect((await app.request(favoriteUrl, { method: "PUT", headers }, env)).status).toBe(204);
     expect((await app.request(favoriteUrl, { method: "PUT", headers }, env)).status).toBe(204);
     expect(repository.favorites.size).toBe(1);
+
+    const viewerResponse = await app.request(`/api/v1/packs/${id}`, {
+      headers: { "X-BPH-User-ID": "dev-user" },
+    }, env);
+    expect(await viewerResponse.json()).toMatchObject({
+      viewer: { rating: 5, favorited: true, can_edit: true },
+    });
+    expect(viewerResponse.headers.get("cache-control")).toBe("no-store");
+
     expect((await app.request(favoriteUrl, { method: "DELETE", headers }, env)).status).toBe(204);
     expect(repository.favorites.size).toBe(0);
+  });
+
+  it("exposes an OPP integration contract and supports CORS preflight", async () => {
+    const contract = await app.request("/api/v1", {}, env);
+    expect(contract.status).toBe(200);
+    expect(await contract.json()).toMatchObject({
+      api_version: 1,
+      auth: { mode: "ed25519-challenge", development_header_enabled: true },
+      features: expect.arrayContaining(["packs", "viewer_state", "challenge_auth"]),
+    });
+    expect(contract.headers.get("x-request-id")).toBeTruthy();
+
+    const preflight = await app.request("/api/v1/packs", {
+      method: "OPTIONS",
+      headers: {
+        Origin: "http://localhost:3000",
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "content-type,x-bph-user-id",
+      },
+    }, env);
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers.get("access-control-allow-origin")).toBe("*");
+    expect(preflight.headers.get("access-control-allow-headers")).toContain("X-BPH-User-ID");
+    expect(preflight.headers.get("x-request-id")).toBeTruthy();
+  });
+
+  it("rejects JSON endpoints with an unsupported media type", async () => {
+    const response = await app.request("/api/v1/packs", {
+      method: "POST",
+      headers: { "content-type": "text/plain", "X-BPH-User-ID": "dev-user" },
+      body: JSON.stringify({ title: "Pack", beatmapset_ids: [1] }),
+    }, env);
+    expect(response.status).toBe(415);
+    expect(await response.json()).toMatchObject({ error: { code: "UNSUPPORTED_MEDIA_TYPE" } });
   });
 
   it("returns unified errors for invalid input and missing packs", async () => {

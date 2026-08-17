@@ -1,5 +1,5 @@
 import type { PackRepository } from "./pack-repository";
-import type { PackCreateData, PackRecord, PackUpdateData } from "../types";
+import type { PackCreateData, PackRecord, PackUpdateData, PackViewerState } from "../types";
 
 interface PackRow {
   internal_id: string;
@@ -71,6 +71,19 @@ export class D1PackRepository implements PackRepository {
       ratingCount: row.rating_count,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+    };
+  }
+
+  async getViewerState(internalId: string, userId: string): Promise<PackViewerState> {
+    const row = await this.db.prepare(`
+      SELECT
+        (SELECT score FROM ratings WHERE pack_id = ? AND user_id = ?) AS rating,
+        EXISTS(SELECT 1 FROM favorites WHERE pack_id = ? AND user_id = ?) AS favorited
+    `).bind(internalId, userId, internalId, userId).first<{ rating: number | null; favorited: number }>();
+
+    return {
+      rating: row?.rating ?? null,
+      favorited: row?.favorited === 1,
     };
   }
 

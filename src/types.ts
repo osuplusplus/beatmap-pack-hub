@@ -1,5 +1,6 @@
 export interface Env {
   DB: D1Database;
+  ALLOW_DEV_AUTH?: string;
 }
 
 export interface PackRecord {
@@ -34,4 +35,9 @@ export interface PackUpdateData {
   manifestHash: string;
   beatmapsetIds: number[];
   now: string;
+}
+
+export interface PackViewerState {
+  rating: number | null;
+  favorited: boolean;
 }
