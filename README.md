@@ -564,6 +564,16 @@ npm run typecheck
 npm test
 ```
 
+连接已部署的 Cloudflare Worker（同时验证健康检查和只读 D1 查询）：
+
+```powershell
+$env:CF_WORKER_URL = "https://你的-worker地址.workers.dev"
+npm run test:link
+```
+
+未设置 `CF_WORKER_URL` 时，连接测试会自动跳过，因此 `npm test` 不会依赖线上服务。
+测试会自动使用 `HTTP_PROXY` 或 `HTTPS_PROXY` 环境变量，便于在代理网络下连接 Cloudflare。
+
 当前测试覆盖：
 
 - 分享 ID 字符集与长度
