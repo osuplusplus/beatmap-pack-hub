@@ -211,7 +211,7 @@ manifest_hash = 有序 BeatmapSet ID 列表的内容身份
 
 ## 本地开发
 
-要求 Node.js 20 或更高版本。
+要求 Node.js 22 或更高版本。项目统一使用 npm；`.node-version` 和 `packageManager` 用于确保本地与 Cloudflare Builds 使用一致运行时。
 
 ```bash
 npm install
@@ -544,9 +544,9 @@ Workers & Pages
 | Framework preset | `None` |
 | Root directory | `/` 或留空 |
 | Build command | `npm run typecheck` |
-| Deploy command | `npx wrangler deploy` |
+| Deploy command | `npm run deploy` |
 
-本项目不需要填写输出目录。`wrangler deploy` 会自动打包 TypeScript Worker。
+本项目不需要填写输出目录。`wrangler deploy` 会自动打包 TypeScript Worker。仓库已通过 `.node-version` 固定 Node 22；如果 Cloudflare 项目设置中手动配置了 `NODE_VERSION`，也必须设为 `22` 或更高版本。
 
 ### 3. 应用远程迁移
 
