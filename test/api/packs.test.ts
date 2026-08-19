@@ -37,6 +37,17 @@ describe("pack API", () => {
     });
   });
 
+  it("supports conditional anonymous cache validation with the manifest hash", async () => {
+    const id = await createPack();
+    const first = await app.request(`/api/v1/packs/${id}`, {}, env);
+    const etag = first.headers.get("etag");
+    expect(etag).toBeTruthy();
+    expect(first.headers.get("x-beatmap-manifest-hash")).toMatch(/^[a-f0-9]{64}$/);
+
+    const cached = await app.request(`/api/v1/packs/${id}`, { headers: { "If-None-Match": etag! } }, env);
+    expect(cached.status).toBe(304);
+  });
+
   it("lists public recommendations and hides private packs", async () => {
     await createPack();
     const privateResponse = await app.request("/api/v1/packs", {

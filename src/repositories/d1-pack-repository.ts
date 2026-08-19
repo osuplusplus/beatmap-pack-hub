@@ -16,6 +16,7 @@ interface PackRow {
   updated_at: string;
   like_count: number;
   comment_count: number;
+  beatmapset_ids_json: string;
 }
 
 export class D1PackRepository implements PackRepository {
@@ -50,7 +51,10 @@ export class D1PackRepository implements PackRepository {
              p.title, p.description, p.is_private, p.manifest_hash, p.created_at, p.updated_at,
              AVG(r.score) AS rating_average, COUNT(DISTINCT r.user_id) AS rating_count,
              (SELECT COUNT(*) FROM pack_likes pl WHERE pl.pack_id = p.id) AS like_count,
-             (SELECT COUNT(*) FROM pack_comments pc WHERE pc.pack_id = p.id AND pc.deleted_at IS NULL) AS comment_count
+             (SELECT COUNT(*) FROM pack_comments pc WHERE pc.pack_id = p.id AND pc.deleted_at IS NULL) AS comment_count,
+             (SELECT json_group_array(items.beatmapset_id)
+                FROM (SELECT beatmapset_id FROM pack_items WHERE pack_id = p.id ORDER BY position) items
+             ) AS beatmapset_ids_json
       FROM packs p
       JOIN users u ON u.id = p.owner_id
       LEFT JOIN ratings r ON r.pack_id = p.id
@@ -58,10 +62,6 @@ export class D1PackRepository implements PackRepository {
       GROUP BY p.id
     `).bind(shareId).first<PackRow>();
     if (!row) return null;
-
-    const items = await this.db.prepare(`
-      SELECT beatmapset_id FROM pack_items WHERE pack_id = ? ORDER BY position ASC
-    `).bind(row.internal_id).all<{ beatmapset_id: number }>();
 
     return {
       internalId: row.internal_id,
@@ -72,7 +72,7 @@ export class D1PackRepository implements PackRepository {
       description: row.description,
       isPrivate: row.is_private === 1,
       manifestHash: row.manifest_hash,
-      beatmapsetIds: items.results.map((item) => item.beatmapset_id),
+      beatmapsetIds: row.beatmapset_ids_json ? JSON.parse(row.beatmapset_ids_json) as number[] : [],
       ratingAverage: row.rating_average ?? 0,
       ratingCount: row.rating_count,
       createdAt: row.created_at,

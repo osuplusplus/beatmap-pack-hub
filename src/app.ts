@@ -233,10 +233,20 @@ export function createApp(
   app.get("/api/v1/search", search);
 
   app.get("/api/v1/packs/:shareId", async (c) => {
-    c.header("Cache-Control", "no-store");
     c.header("Vary", "X-BPH-User-ID, Origin");
     const viewerId = await identity(c.req.raw.headers, c.env, authService(c.env), false);
-    return c.json(await service(c.env).get(requireShareId(c.req.param("shareId")), viewerId));
+    const pack = await service(c.env).get(requireShareId(c.req.param("shareId")), viewerId);
+    // Viewer state is user-specific, so only anonymous responses may be shared.
+    if (viewerId) {
+      c.header("Cache-Control", "no-store");
+      return c.json(pack);
+    }
+    const etag = `\"${pack.updated_at}:${pack.manifest_hash}\"`;
+    c.header("ETag", etag);
+    c.header("X-Beatmap-Manifest-Hash", pack.manifest_hash);
+    c.header("Cache-Control", "public, max-age=300, stale-while-revalidate=60");
+    if (c.req.header("If-None-Match") === etag) return c.body(null, 304);
+    return c.json(pack);
   });
 
   app.patch("/api/v1/packs/:shareId", async (c) => {
