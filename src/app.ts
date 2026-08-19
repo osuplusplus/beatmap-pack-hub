@@ -10,6 +10,7 @@ import type { PackRepository } from "./repositories/pack-repository";
 import { PackService } from "./services/pack-service";
 import { AuthService } from "./services/auth-service";
 import type { Env } from "./types";
+import { importOsuTournamentPacks } from "./services/osu-pack-importer";
 import {
   challengeSchema,
   createPackSchema,
@@ -195,6 +196,17 @@ export function createApp(
     const input = await parseBody(c.req.raw, createPackSchema);
     const userId = await identity(c.req.raw.headers, c.env, authService(c.env), true);
     return c.json(await service(c.env).create(userId!, input), 201);
+  });
+
+  app.post("/api/v1/admin/import/osu-tournament-packs", async (c) => {
+    const configured = c.env.IMPORT_SECRET?.trim();
+    const supplied = c.req.header("X-BPH-Import-Secret")?.trim();
+    if (!configured || !supplied || supplied !== configured) {
+      throw new AppError(401, "IMPORT_AUTH_REQUIRED", "A valid import secret is required");
+    }
+    const rawPages = Number(c.req.query("max_pages") ?? 1);
+    const maxPages = Number.isInteger(rawPages) ? Math.min(Math.max(rawPages, 1), 100) : 1;
+    return c.json(await importOsuTournamentPacks(c.env, maxPages));
   });
 
   const recommendations = async (c: Context<{ Bindings: Env }>) => {

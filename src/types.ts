@@ -1,6 +1,7 @@
 export interface Env {
   DB: D1Database;
   ALLOW_DEV_AUTH?: string;
+  IMPORT_SECRET?: string;
 }
 
 export interface PackRecord {

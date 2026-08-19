@@ -123,6 +123,8 @@ src/
 migrations/0001_initial.sql             D1 Schema
 migrations/0002_challenge_auth.sql      Challenge 与 Session Schema
 migrations/0003_multi_device.sql         用户档案与多设备 Schema
+migrations/0004_pack_visibility_social.sql 公开/私有与社交计数
+migrations/0005_osu_import_source.sql     osu! 曲包来源幂等键
 test/                                   单元测试和 API 集成测试
 ```
 
@@ -611,6 +613,23 @@ Database: beatmap-pack-hub
 ```
 
 同时确认环境变量 `ALLOW_DEV_AUTH=false`。仓库默认已经关闭开发身份头；只有受控的本地兼容测试才应临时启用它。
+
+### 导入 osu! Tournament 曲包
+
+公开部署后，先用 Cloudflare Secret 配置导入密钥（不要放入 `wrangler.jsonc`）：
+
+```bash
+wrangler secret put IMPORT_SECRET
+```
+
+然后调用受保护的导入接口。默认抓取给定列表的第 1 页；可通过 `max_pages` 继续抓取后续分页。导入只保存曲包标题、日期/作者说明和有序 `beatmapset_id`，并以 osu! 的 `Pxxx` 作为来源幂等键：
+
+```bash
+curl -X POST "https://<your-worker>/api/v1/admin/import/osu-tournament-packs?max_pages=1" \
+  -H "X-BPH-Import-Secret: <secret>"
+```
+
+重复调用会更新已有来源曲包，不会创建重复 Pack。请通过 HTTPS 调用，并将密钥限制在运维环境中。
 
 ## 测试线上部署
 
