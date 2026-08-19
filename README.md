@@ -81,6 +81,8 @@ Pack ID Registry
 - [x] 统一 JSON 错误结构
 - [x] OPP 能力发现、CORS 预检和请求追踪 ID
 - [x] 当前用户的评分、收藏及编辑权限状态
+- [x] 公开曲包推荐列表与私有曲包可见性
+- [x] 点赞、评论计数及后续接口预留表
 - [x] 首次握手建档、Ed25519 Challenge、Bearer Session 与多设备管理
 - [x] 单元测试和 API 集成测试
 - [x] Cloudflare Workers 部署配置
@@ -148,6 +150,7 @@ packs
 ├── owner_id
 ├── title
 ├── description
+├── is_private
 ├── manifest_hash
 ├── created_at
 └── updated_at
@@ -168,6 +171,20 @@ favorites
 ├── pack_id
 ├── user_id
 └── created_at
+
+pack_likes
+├── pack_id
+├── user_id
+└── created_at
+
+pack_comments
+├── id
+├── pack_id
+├── user_id
+├── content
+├── created_at
+├── updated_at
+└── deleted_at
 
 auth_challenges
 ├── id
@@ -345,6 +362,29 @@ GET /api/v1/packs/:share_id
 
 没有评分时 `average` 为 `null`。
 
+响应还包含 `is_private`、`likes.count` 和 `comments.count`。私有 Pack 只有 owner 携带认证后可读取，其他请求统一返回 `404`，避免泄露对象存在性。
+
+### 获取推荐曲包
+
+```http
+GET /api/v1/packs/recommendations?limit=20
+```
+
+该接口无需登录，只返回 `is_private = false` 的公开曲包，按最近更新时间倒序排列。`limit` 范围为 1–50，默认 20。返回结构为：
+
+```json
+{
+  "packs": [
+    {
+      "id": "7K3N9A",
+      "is_private": false,
+      "likes": { "count": 0 },
+      "comments": { "count": 0 }
+    }
+  ]
+}
+```
+
 如果请求携带有效的 Bearer Session，响应还会增加当前用户状态：
 
 ```json
@@ -373,7 +413,8 @@ Authorization: Bearer <access_token>
 {
   "title": "Updated Tech Pack",
   "description": "Updated description",
-  "beatmapset_ids": [999, 888, 999]
+  "beatmapset_ids": [999, 888, 999],
+  "is_private": true
 }
 ```
 

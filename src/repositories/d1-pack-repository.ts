@@ -8,11 +8,14 @@ interface PackRow {
   owner_display_name: string;
   title: string;
   description: string;
+  is_private: number;
   manifest_hash: string;
   rating_average: number | null;
   rating_count: number;
   created_at: string;
   updated_at: string;
+  like_count: number;
+  comment_count: number;
 }
 
 export class D1PackRepository implements PackRepository {
@@ -31,9 +34,9 @@ export class D1PackRepository implements PackRepository {
   async create(data: PackCreateData): Promise<void> {
     const statements = [
       this.db.prepare(`
-        INSERT INTO packs (id, share_id, owner_id, title, description, manifest_hash, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).bind(data.internalId, data.shareId, data.ownerId, data.title, data.description, data.manifestHash, data.now, data.now),
+        INSERT INTO packs (id, share_id, owner_id, title, description, is_private, manifest_hash, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(data.internalId, data.shareId, data.ownerId, data.title, data.description, data.isPrivate ? 1 : 0, data.manifestHash, data.now, data.now),
       ...data.beatmapsetIds.map((beatmapsetId, position) =>
         this.db.prepare("INSERT INTO pack_items (pack_id, beatmapset_id, position) VALUES (?, ?, ?)")
           .bind(data.internalId, beatmapsetId, position)),
@@ -44,8 +47,10 @@ export class D1PackRepository implements PackRepository {
   async findByShareId(shareId: string): Promise<PackRecord | null> {
     const row = await this.db.prepare(`
       SELECT p.id AS internal_id, p.share_id, p.owner_id, u.display_name AS owner_display_name,
-             p.title, p.description, p.manifest_hash, p.created_at, p.updated_at,
-             AVG(r.score) AS rating_average, COUNT(r.score) AS rating_count
+             p.title, p.description, p.is_private, p.manifest_hash, p.created_at, p.updated_at,
+             AVG(r.score) AS rating_average, COUNT(DISTINCT r.user_id) AS rating_count,
+             (SELECT COUNT(*) FROM pack_likes pl WHERE pl.pack_id = p.id) AS like_count,
+             (SELECT COUNT(*) FROM pack_comments pc WHERE pc.pack_id = p.id) AS comment_count
       FROM packs p
       JOIN users u ON u.id = p.owner_id
       LEFT JOIN ratings r ON r.pack_id = p.id
@@ -65,13 +70,27 @@ export class D1PackRepository implements PackRepository {
       ownerDisplayName: row.owner_display_name,
       title: row.title,
       description: row.description,
+      isPrivate: row.is_private === 1,
       manifestHash: row.manifest_hash,
       beatmapsetIds: items.results.map((item) => item.beatmapset_id),
       ratingAverage: row.rating_average ?? 0,
       ratingCount: row.rating_count,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+      likeCount: row.like_count,
+      commentCount: row.comment_count,
     };
+  }
+
+  async listPublic(limit: number): Promise<PackRecord[]> {
+    const rows = await this.db.prepare(`
+      SELECT p.share_id FROM packs p
+      WHERE p.is_private = 0
+      ORDER BY p.updated_at DESC, p.id DESC
+      LIMIT ?
+    `).bind(limit).all<{ share_id: string }>();
+    const packs = await Promise.all(rows.results.map((row) => this.findByShareId(row.share_id)));
+    return packs.filter((pack): pack is PackRecord => pack !== null);
   }
 
   async getViewerState(internalId: string, userId: string): Promise<PackViewerState> {
@@ -90,8 +109,8 @@ export class D1PackRepository implements PackRepository {
   async update(internalId: string, data: PackUpdateData): Promise<void> {
     const statements = [
       this.db.prepare(`
-        UPDATE packs SET title = ?, description = ?, manifest_hash = ?, updated_at = ? WHERE id = ?
-      `).bind(data.title, data.description, data.manifestHash, data.now, internalId),
+        UPDATE packs SET title = ?, description = ?, is_private = ?, manifest_hash = ?, updated_at = ? WHERE id = ?
+      `).bind(data.title, data.description, data.isPrivate ? 1 : 0, data.manifestHash, data.now, internalId),
       this.db.prepare("DELETE FROM pack_items WHERE pack_id = ?").bind(internalId),
       ...data.beatmapsetIds.map((beatmapsetId, position) =>
         this.db.prepare("INSERT INTO pack_items (pack_id, beatmapset_id, position) VALUES (?, ?, ?)")

@@ -37,6 +37,29 @@ describe("pack API", () => {
     });
   });
 
+  it("lists public recommendations and hides private packs", async () => {
+    await createPack();
+    const privateResponse = await app.request("/api/v1/packs", {
+      method: "POST",
+      headers: { "content-type": "application/json", "X-BPH-User-ID": "dev-user" },
+      body: JSON.stringify({ title: "Private", beatmapset_ids: [99], is_private: true }),
+    }, env);
+    const privateId = (await privateResponse.json() as { id: string }).id;
+
+    const recommendations = await app.request("/api/v1/packs/recommendations?limit=50", {}, env);
+    expect(recommendations.status).toBe(200);
+    expect((await recommendations.json() as { packs: Array<{ id: string; is_private: boolean }> }).packs)
+      .toEqual([expect.objectContaining({ is_private: false })]);
+
+    const hidden = await app.request(`/api/v1/packs/${privateId}`, {}, env);
+    expect(hidden.status).toBe(404);
+    const ownerView = await app.request(`/api/v1/packs/${privateId}`, {
+      headers: { "X-BPH-User-ID": "dev-user" },
+    }, env);
+    expect(ownerView.status).toBe(200);
+    expect(await ownerView.json()).toMatchObject({ is_private: true, likes: { count: 0 }, comments: { count: 0 } });
+  });
+
   it("updates content only for the owner", async () => {
     const id = await createPack();
     const forbidden = await app.request(`/api/v1/packs/${id}`, {

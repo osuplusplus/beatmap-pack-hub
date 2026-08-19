@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import { ZodError, type ZodType } from "zod";
 import { LIMITS } from "./config";
@@ -122,7 +122,7 @@ export function createApp(
       session_scheme: "Bearer",
       development_header_enabled: c.env.ALLOW_DEV_AUTH === "true",
     },
-    features: ["packs", "ratings", "favorites", "viewer_state", "challenge_auth", "multi_device"],
+    features: ["packs", "pack_recommendations", "private_packs", "ratings", "favorites", "likes", "comments", "viewer_state", "challenge_auth", "multi_device"],
     limits: {
       title_length: LIMITS.titleMaxLength,
       description_length: LIMITS.descriptionMaxLength,
@@ -196,6 +196,15 @@ export function createApp(
     const userId = await identity(c.req.raw.headers, c.env, authService(c.env), true);
     return c.json(await service(c.env).create(userId!, input), 201);
   });
+
+  const recommendations = async (c: Context<{ Bindings: Env }>) => {
+    c.header("Cache-Control", "public, max-age=60");
+    const rawLimit = Number(c.req.query("limit") ?? 20);
+    const limit = Number.isInteger(rawLimit) ? Math.min(Math.max(rawLimit, 1), 50) : 20;
+    return c.json({ packs: await service(c.env).recommendations(limit) });
+  };
+  app.get("/api/v1/packs/recommendations", recommendations);
+  app.get("/api/v1/recommendations", recommendations);
 
   app.get("/api/v1/packs/:shareId", async (c) => {
     c.header("Cache-Control", "no-store");

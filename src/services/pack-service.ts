@@ -2,6 +2,7 @@ import { SHARE_ID } from "../config";
 import { AppError, notFound } from "../errors";
 import { deduplicatePreservingOrder, generateShareId, manifestHash } from "../domain/pack";
 import type { PackRepository } from "../repositories/pack-repository";
+import type { PackRecord } from "../types";
 import type { CreatePackInput, UpdatePackInput } from "../validation";
 
 export class PackService {
@@ -32,6 +33,7 @@ export class PackService {
       ownerId: userId,
       title: input.title,
       description: input.description,
+      isPrivate: input.is_private,
       manifestHash: await manifestHash(ids),
       beatmapsetIds: ids,
       now,
@@ -43,6 +45,7 @@ export class PackService {
     const pack = await this.repository.findByShareId(shareId);
     if (!pack) throw notFound();
     if (viewerId) await this.assertUser(viewerId);
+    if (pack.isPrivate && pack.ownerId !== viewerId) throw notFound();
     const viewer = viewerId
       ? await this.repository.getViewerState(pack.internalId, viewerId)
       : null;
@@ -50,6 +53,7 @@ export class PackService {
       id: pack.shareId,
       title: pack.title,
       description: pack.description,
+      is_private: pack.isPrivate,
       owner: { id: pack.ownerId, display_name: pack.ownerDisplayName },
       beatmapset_ids: pack.beatmapsetIds,
       manifest_hash: pack.manifestHash,
@@ -57,6 +61,8 @@ export class PackService {
         average: pack.ratingCount === 0 ? null : Number(pack.ratingAverage.toFixed(2)),
         count: pack.ratingCount,
       },
+      likes: { count: pack.likeCount },
+      comments: { count: pack.commentCount },
       ...(viewerId && viewer ? {
         viewer: {
           rating: viewer.rating,
@@ -80,10 +86,33 @@ export class PackService {
     await this.repository.update(current.internalId, {
       title: input.title ?? current.title,
       description: input.description ?? current.description,
+      isPrivate: input.is_private ?? current.isPrivate,
       manifestHash: await manifestHash(ids),
       beatmapsetIds: ids,
       now: new Date().toISOString(),
     });
+  }
+
+  async recommendations(limit = 20) {
+    const packs = await this.repository.listPublic(limit);
+    return packs.map((pack) => this.serialize(pack));
+  }
+
+  private serialize(pack: PackRecord) {
+    return {
+      id: pack.shareId,
+      title: pack.title,
+      description: pack.description,
+      is_private: pack.isPrivate,
+      owner: { id: pack.ownerId, display_name: pack.ownerDisplayName },
+      beatmapset_ids: pack.beatmapsetIds,
+      manifest_hash: pack.manifestHash,
+      rating: { average: pack.ratingCount === 0 ? null : Number(pack.ratingAverage.toFixed(2)), count: pack.ratingCount },
+      likes: { count: pack.likeCount },
+      comments: { count: pack.commentCount },
+      created_at: pack.createdAt,
+      updated_at: pack.updatedAt,
+    };
   }
 
   async delete(userId: string, shareId: string): Promise<void> {

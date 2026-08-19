@@ -27,11 +27,21 @@ export class MemoryPackRepository implements PackRepository {
       ownerId: data.ownerId,
       title: data.title,
       description: data.description,
+      isPrivate: data.isPrivate,
       manifestHash: data.manifestHash,
       beatmapsetIds: [...data.beatmapsetIds],
       createdAt: data.now,
       updatedAt: data.now,
+      likeCount: 0,
+      commentCount: 0,
     });
+  }
+
+  async listPublic(limit: number): Promise<PackRecord[]> {
+    const packs = await Promise.all([...this.packs.keys()].map((shareId) => this.findByShareId(shareId)));
+    return packs.filter((pack): pack is PackRecord => pack !== null && !pack.isPrivate)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .slice(0, limit);
   }
 
   async findByShareId(shareId: string): Promise<PackRecord | null> {
@@ -59,6 +69,7 @@ export class MemoryPackRepository implements PackRepository {
     Object.assign(pack, {
       title: data.title,
       description: data.description,
+      isPrivate: data.isPrivate,
       manifestHash: data.manifestHash,
       beatmapsetIds: [...data.beatmapsetIds],
       updatedAt: data.now,

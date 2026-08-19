@@ -10,12 +10,15 @@ export interface PackRecord {
   ownerDisplayName: string;
   title: string;
   description: string;
+  isPrivate: boolean;
   manifestHash: string;
   beatmapsetIds: number[];
   ratingAverage: number;
   ratingCount: number;
   createdAt: string;
   updatedAt: string;
+  likeCount: number;
+  commentCount: number;
 }
 
 export interface PackCreateData {
@@ -24,6 +27,7 @@ export interface PackCreateData {
   ownerId: string;
   title: string;
   description: string;
+  isPrivate: boolean;
   manifestHash: string;
   beatmapsetIds: number[];
   now: string;
@@ -32,6 +36,7 @@ export interface PackCreateData {
 export interface PackUpdateData {
   title: string;
   description: string;
+  isPrivate: boolean;
   manifestHash: string;
   beatmapsetIds: number[];
   now: string;

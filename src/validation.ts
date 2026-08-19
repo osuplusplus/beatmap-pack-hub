@@ -9,12 +9,14 @@ export const createPackSchema = z.object({
   title: z.string().trim().min(1).max(LIMITS.titleMaxLength),
   description: z.string().max(LIMITS.descriptionMaxLength).default(""),
   beatmapset_ids: beatmapsetIds,
+  is_private: z.boolean().default(false),
 }).strict();
 
 export const updatePackSchema = z.object({
   title: z.string().trim().min(1).max(LIMITS.titleMaxLength).optional(),
   description: z.string().max(LIMITS.descriptionMaxLength).optional(),
   beatmapset_ids: beatmapsetIds.optional(),
+  is_private: z.boolean().optional(),
 }).strict().refine((value) => Object.keys(value).length > 0, "At least one field is required");
 
 export const ratingSchema = z.object({
