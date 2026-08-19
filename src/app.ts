@@ -126,7 +126,7 @@ export function createApp(
       development_header_enabled: c.env.ALLOW_DEV_AUTH === "true"
         && ["development", "test"].includes(c.env.ENVIRONMENT ?? ""),
     },
-    features: ["packs", "pack_recommendations", "private_packs", "ratings", "favorites", "likes", "comments", "viewer_state", "challenge_auth", "multi_device"],
+    features: ["packs", "pack_search", "pack_recommendations", "private_packs", "ratings", "favorites", "likes", "comments", "viewer_state", "challenge_auth", "multi_device"],
     limits: {
       title_length: LIMITS.titleMaxLength,
       description_length: LIMITS.descriptionMaxLength,
@@ -220,6 +220,17 @@ export function createApp(
   };
   app.get("/api/v1/packs/recommendations", recommendations);
   app.get("/api/v1/recommendations", recommendations);
+
+  const search = async (c: Context<{ Bindings: Env }>) => {
+    const query = c.req.query("q")?.trim() ?? "";
+    if (!query) throw new AppError(400, "SEARCH_QUERY_REQUIRED", "Search query q is required");
+    const rawLimit = Number(c.req.query("limit") ?? 20);
+    const limit = Number.isInteger(rawLimit) ? Math.min(Math.max(rawLimit, 1), 50) : 20;
+    c.header("Cache-Control", "public, max-age=60");
+    return c.json({ packs: await service(c.env).search(query, limit) });
+  };
+  app.get("/api/v1/packs/search", search);
+  app.get("/api/v1/search", search);
 
   app.get("/api/v1/packs/:shareId", async (c) => {
     c.header("Cache-Control", "no-store");

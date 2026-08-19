@@ -99,6 +99,11 @@ export class PackService {
     return packs.map((pack) => this.serialize(pack));
   }
 
+  async search(query: string, limit = 20) {
+    const packs = await this.repository.searchPublic(query, limit);
+    return packs.map((pack) => this.serialize(pack));
+  }
+
   private serialize(pack: PackRecord) {
     return {
       id: pack.shareId,

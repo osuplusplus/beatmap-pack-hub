@@ -6,6 +6,7 @@ export interface PackRepository {
   create(data: PackCreateData): Promise<void>;
   findByShareId(shareId: string): Promise<PackRecord | null>;
   listPublic(limit: number): Promise<PackRecord[]>;
+  searchPublic(query: string, limit: number): Promise<PackRecord[]>;
   getViewerState(internalId: string, userId: string): Promise<PackViewerState>;
   update(internalId: string, data: PackUpdateData): Promise<void>;
   delete(internalId: string): Promise<void>;

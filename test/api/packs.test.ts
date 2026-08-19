@@ -60,6 +60,29 @@ describe("pack API", () => {
     expect(await ownerView.json()).toMatchObject({ is_private: true, likes: { count: 0 }, comments: { count: 0 } });
   });
 
+  it("searches public packs by metadata and beatmapset ID", async () => {
+    await createPack();
+    const second = await app.request("/api/v1/packs", {
+      method: "POST",
+      headers: { "content-type": "application/json", "X-BPH-User-ID": "dev-user" },
+      body: JSON.stringify({ title: "Ambient Focus", description: "Night session", beatmapset_ids: [987654] }),
+    }, env);
+    expect(second.status).toBe(201);
+
+    const byTitle = await app.request("/api/v1/search?q=ambient", {}, env);
+    expect(byTitle.status).toBe(200);
+    expect((await byTitle.json() as { packs: Array<{ title: string }> }).packs.map((pack) => pack.title))
+      .toEqual(["Ambient Focus"]);
+
+    const byId = await app.request("/api/v1/packs/search?q=987654", {}, env);
+    expect(byId.status).toBe(200);
+    expect((await byId.json() as { packs: Array<{ title: string }> }).packs[0].title).toBe("Ambient Focus");
+
+    const missingQuery = await app.request("/api/v1/search", {}, env);
+    expect(missingQuery.status).toBe(400);
+    expect(await missingQuery.json()).toMatchObject({ error: { code: "SEARCH_QUERY_REQUIRED" } });
+  });
+
   it("updates content only for the owner", async () => {
     const id = await createPack();
     const forbidden = await app.request(`/api/v1/packs/${id}`, {

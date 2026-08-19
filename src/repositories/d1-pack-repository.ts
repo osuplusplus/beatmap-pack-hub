@@ -93,6 +93,25 @@ export class D1PackRepository implements PackRepository {
     return packs.filter((pack): pack is PackRecord => pack !== null);
   }
 
+  async searchPublic(query: string, limit: number): Promise<PackRecord[]> {
+    const pattern = `%${query}%`;
+    const rows = await this.db.prepare(`
+      SELECT DISTINCT p.share_id
+      FROM packs p
+      JOIN users u ON u.id = p.owner_id
+      LEFT JOIN pack_items pi ON pi.pack_id = p.id
+      WHERE p.is_private = 0
+        AND (p.title LIKE ? COLLATE NOCASE
+          OR p.description LIKE ? COLLATE NOCASE
+          OR u.display_name LIKE ? COLLATE NOCASE
+          OR CAST(pi.beatmapset_id AS TEXT) LIKE ?)
+      ORDER BY p.updated_at DESC, p.id DESC
+      LIMIT ?
+    `).bind(pattern, pattern, pattern, pattern, limit).all<{ share_id: string }>();
+    const packs = await Promise.all(rows.results.map((row) => this.findByShareId(row.share_id)));
+    return packs.filter((pack): pack is PackRecord => pack !== null);
+  }
+
   async getViewerState(internalId: string, userId: string): Promise<PackViewerState> {
     const row = await this.db.prepare(`
       SELECT

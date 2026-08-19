@@ -46,6 +46,16 @@ export class MemoryPackRepository implements PackRepository {
       .slice(0, limit);
   }
 
+  async searchPublic(query: string, limit: number): Promise<PackRecord[]> {
+    const normalized = query.toLocaleLowerCase();
+    const packs = await Promise.all([...this.packs.keys()].map((shareId) => this.findByShareId(shareId)));
+    return packs.filter((pack): pack is PackRecord => {
+      if (!pack || pack.isPrivate) return false;
+      return [pack.title, pack.description, pack.ownerDisplayName, ...pack.beatmapsetIds.map(String)]
+        .some((field) => field.toLocaleLowerCase().includes(normalized));
+    }).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, limit);
+  }
+
   async findByShareId(shareId: string): Promise<PackRecord | null> {
     const pack = this.packs.get(shareId);
     if (!pack) return null;
