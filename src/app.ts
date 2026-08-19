@@ -13,11 +13,13 @@ import type { Env } from "./types";
 import { importOsuTournamentPacks } from "./services/osu-pack-importer";
 import {
   challengeSchema,
+  commentSchema,
   createPackSchema,
   handshakeSchema,
   linkDeviceSchema,
   ratingSchema,
   updatePackSchema,
+  updateCommentSchema,
   verifySchema,
 } from "./validation";
 
@@ -48,7 +50,7 @@ async function identity(
 
   const developmentId = headers.get("X-BPH-User-ID")?.trim();
   if (developmentId) {
-    if (env.ALLOW_DEV_AUTH !== "true") {
+    if (env.ALLOW_DEV_AUTH !== "true" || !["development", "test"].includes(env.ENVIRONMENT ?? "")) {
       throw new AppError(401, "DEV_AUTH_DISABLED", "Development identity authentication is disabled");
     }
     return developmentId;
@@ -121,7 +123,8 @@ export function createApp(
       mode: "ed25519-challenge",
       algorithm: "Ed25519",
       session_scheme: "Bearer",
-      development_header_enabled: c.env.ALLOW_DEV_AUTH === "true",
+      development_header_enabled: c.env.ALLOW_DEV_AUTH === "true"
+        && ["development", "test"].includes(c.env.ENVIRONMENT ?? ""),
     },
     features: ["packs", "pack_recommendations", "private_packs", "ratings", "favorites", "likes", "comments", "viewer_state", "challenge_auth", "multi_device"],
     limits: {
@@ -254,6 +257,43 @@ export function createApp(
   app.delete("/api/v1/packs/:shareId/favorite", async (c) => {
     const userId = await identity(c.req.raw.headers, c.env, authService(c.env), true);
     await service(c.env).favorite(userId!, requireShareId(c.req.param("shareId")), false);
+    return c.body(null, 204);
+  });
+
+  app.put("/api/v1/packs/:shareId/like", async (c) => {
+    const userId = await identity(c.req.raw.headers, c.env, authService(c.env), true);
+    await service(c.env).like(userId!, requireShareId(c.req.param("shareId")), true);
+    return c.body(null, 204);
+  });
+
+  app.delete("/api/v1/packs/:shareId/like", async (c) => {
+    const userId = await identity(c.req.raw.headers, c.env, authService(c.env), true);
+    await service(c.env).like(userId!, requireShareId(c.req.param("shareId")), false);
+    return c.body(null, 204);
+  });
+
+  app.get("/api/v1/packs/:shareId/comments", async (c) => {
+    const viewerId = await identity(c.req.raw.headers, c.env, authService(c.env), false);
+    const rawLimit = Number(c.req.query("limit") ?? 50);
+    const limit = Number.isInteger(rawLimit) ? Math.min(Math.max(rawLimit, 1), 100) : 50;
+    return c.json({ comments: await service(c.env).comments(viewerId, requireShareId(c.req.param("shareId")), limit) });
+  });
+
+  app.post("/api/v1/packs/:shareId/comments", async (c) => {
+    const input = await parseBody(c.req.raw, commentSchema);
+    const userId = await identity(c.req.raw.headers, c.env, authService(c.env), true);
+    return c.json(await service(c.env).createComment(userId!, requireShareId(c.req.param("shareId")), input.content), 201);
+  });
+
+  app.patch("/api/v1/comments/:commentId", async (c) => {
+    const input = await parseBody(c.req.raw, updateCommentSchema);
+    const userId = await identity(c.req.raw.headers, c.env, authService(c.env), true);
+    return c.json(await service(c.env).updateComment(userId!, c.req.param("commentId"), input.content));
+  });
+
+  app.delete("/api/v1/comments/:commentId", async (c) => {
+    const userId = await identity(c.req.raw.headers, c.env, authService(c.env), true);
+    await service(c.env).deleteComment(userId!, c.req.param("commentId"));
     return c.body(null, 204);
   });
 

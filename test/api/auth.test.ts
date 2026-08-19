@@ -6,7 +6,7 @@ import type { Env } from "../../src/types";
 import { MemoryAuthRepository } from "../support/memory-auth-repository";
 import { MemoryPackRepository } from "../support/memory-pack-repository";
 
-const env = { ALLOW_DEV_AUTH: "true" } as Env;
+const env = { ALLOW_DEV_AUTH: "true", ENVIRONMENT: "test" } as Env;
 
 interface TestKeyPair {
   pair: CryptoKeyPair;

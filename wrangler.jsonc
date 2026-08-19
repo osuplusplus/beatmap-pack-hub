@@ -5,7 +5,8 @@
   "compatibility_date": "2025-08-16",
   "send_metrics": false,
   "vars": {
-    "ALLOW_DEV_AUTH": "false"
+    "ALLOW_DEV_AUTH": "false",
+    "ENVIRONMENT": "production"
   },
   "d1_databases": [
     {

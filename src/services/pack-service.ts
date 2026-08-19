@@ -2,7 +2,7 @@ import { SHARE_ID } from "../config";
 import { AppError, notFound } from "../errors";
 import { deduplicatePreservingOrder, generateShareId, manifestHash } from "../domain/pack";
 import type { PackRepository } from "../repositories/pack-repository";
-import type { PackRecord } from "../types";
+import type { CommentRecord, CommentView, PackRecord } from "../types";
 import type { CreatePackInput, UpdatePackInput } from "../validation";
 
 export class PackService {
@@ -67,6 +67,7 @@ export class PackService {
         viewer: {
           rating: viewer.rating,
           favorited: viewer.favorited,
+          liked: viewer.liked,
           can_edit: pack.ownerId === viewerId,
         },
       } : {}),
@@ -139,5 +140,56 @@ export class PackService {
     } else {
       await this.repository.removeFavorite(current.internalId, userId);
     }
+  }
+
+  private async accessiblePack(shareId: string, viewerId: string): Promise<PackRecord> {
+    await this.assertUser(viewerId);
+    const pack = await this.repository.findByShareId(shareId);
+    if (!pack || (pack.isPrivate && pack.ownerId !== viewerId)) throw notFound();
+    return pack;
+  }
+
+  async like(userId: string, shareId: string, enabled: boolean): Promise<void> {
+    const pack = await this.accessiblePack(shareId, userId);
+    if (enabled) await this.repository.addLike(pack.internalId, userId, new Date().toISOString());
+    else await this.repository.removeLike(pack.internalId, userId);
+  }
+
+  async comments(userId: string | null, shareId: string, limit = 50): Promise<CommentView[]> {
+    const pack = await this.repository.findByShareId(shareId);
+    if (!pack || (pack.isPrivate && pack.ownerId !== userId)) throw notFound();
+    return (await this.repository.listComments(pack.internalId, limit)).map((comment) => ({
+      id: comment.id,
+      user: { id: comment.userId, display_name: comment.userDisplayName },
+      content: comment.content,
+      created_at: comment.createdAt,
+      updated_at: comment.updatedAt,
+    }));
+  }
+
+  async createComment(userId: string, shareId: string, content: string): Promise<CommentRecord> {
+    const pack = await this.accessiblePack(shareId, userId);
+    return this.repository.createComment(pack.internalId, userId, content, new Date().toISOString());
+  }
+
+  async updateComment(userId: string, commentId: string, content: string): Promise<CommentRecord> {
+    await this.assertUser(userId);
+    const current = await this.repository.findComment(commentId);
+    if (!current) throw notFound();
+    if (current.userId !== userId) throw new AppError(403, "NOT_COMMENT_AUTHOR", "Only the comment author can edit this comment");
+    const updated = await this.repository.updateComment(commentId, content, new Date().toISOString());
+    if (!updated) throw notFound();
+    return updated;
+  }
+
+  async deleteComment(userId: string, commentId: string): Promise<void> {
+    await this.assertUser(userId);
+    const comment = await this.repository.findComment(commentId);
+    if (!comment) throw notFound();
+    const pack = await this.repository.findByShareId(comment.packId);
+    if (comment.userId !== userId && pack?.ownerId !== userId) {
+      throw new AppError(403, "COMMENT_DELETE_FORBIDDEN", "Only the comment author or pack owner can delete this comment");
+    }
+    await this.repository.deleteComment(commentId);
   }
 }

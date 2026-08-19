@@ -279,7 +279,7 @@ API Base Path：
 Authorization: Bearer <access_token>
 ```
 
-本地联调仍可在 `ALLOW_DEV_AUTH=true` 时使用 `X-BPH-User-ID: dev-user`。
+本地联调必须同时设置 `ENVIRONMENT=development` 和 `ALLOW_DEV_AUTH=true`，才可使用 `X-BPH-User-ID`。生产环境默认 `ENVIRONMENT=production`，即使误设 `ALLOW_DEV_AUTH=true` 也会拒绝该请求；生产用户必须使用 Ed25519 Bearer Session。
 
 ### OPP 联调入口
 

@@ -3,7 +3,7 @@ import { createApp } from "../../src/app";
 import type { Env } from "../../src/types";
 import { MemoryPackRepository } from "../support/memory-pack-repository";
 
-const env = { ALLOW_DEV_AUTH: "true" } as Env;
+const env = { ALLOW_DEV_AUTH: "true", ENVIRONMENT: "test" } as Env;
 
 describe("pack API", () => {
   let repository: MemoryPackRepository;
@@ -180,6 +180,16 @@ describe("pack API", () => {
     consoleError.mockRestore();
   });
 
+  it("never accepts development identity headers in production", async () => {
+    const response = await app.request("/api/v1/packs", {
+      method: "POST",
+      headers: { "content-type": "application/json", "X-BPH-User-ID": "dev-user" },
+      body: JSON.stringify({ title: "Pack", beatmapset_ids: [1] }),
+    }, { ALLOW_DEV_AUTH: "true", ENVIRONMENT: "production" } as Env);
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({ error: { code: "DEV_AUTH_DISABLED" } });
+  });
+
   it("deletes a pack and then returns 404", async () => {
     const id = await createPack();
     expect((await app.request(`/api/v1/packs/${id}`, {
@@ -187,5 +197,24 @@ describe("pack API", () => {
       headers: { "X-BPH-User-ID": "dev-user" },
     }, env)).status).toBe(204);
     expect((await app.request(`/api/v1/packs/${id}`, {}, env)).status).toBe(404);
+  });
+
+  it("supports likes and comment ownership", async () => {
+    const id = await createPack();
+    const headers = { "X-BPH-User-ID": "dev-user" };
+    expect((await app.request(`/api/v1/packs/${id}/like`, { method: "PUT", headers }, env)).status).toBe(204);
+    expect(await (await app.request(`/api/v1/packs/${id}`, { headers }, env)).json()).toMatchObject({ likes: { count: 1 }, viewer: { liked: true } });
+    const created = await app.request(`/api/v1/packs/${id}/comments`, {
+      method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ content: "Great pack" }),
+    }, env);
+    expect(created.status).toBe(201);
+    const comment = await created.json() as { id: string };
+    expect((await app.request(`/api/v1/packs/${id}/comments`, {}, env)).status).toBe(200);
+    const edited = await app.request(`/api/v1/comments/${comment.id}`, {
+      method: "PATCH", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ content: "Updated" }),
+    }, env);
+    expect(edited.status).toBe(200);
+    expect((await app.request(`/api/v1/comments/${comment.id}`, { method: "DELETE", headers }, env)).status).toBe(204);
+    expect(await (await app.request(`/api/v1/packs/${id}`, {}, env)).json()).toMatchObject({ comments: { count: 0 } });
   });
 });

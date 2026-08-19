@@ -1,4 +1,4 @@
-import type { PackCreateData, PackRecord, PackUpdateData, PackViewerState } from "../types";
+import type { CommentRecord, PackCreateData, PackRecord, PackUpdateData, PackViewerState } from "../types";
 
 export interface PackRepository {
   userExists(userId: string): Promise<boolean>;
@@ -12,4 +12,11 @@ export interface PackRepository {
   upsertRating(internalId: string, userId: string, score: number, now: string): Promise<void>;
   addFavorite(internalId: string, userId: string, now: string): Promise<void>;
   removeFavorite(internalId: string, userId: string): Promise<void>;
+  addLike(internalId: string, userId: string, now: string): Promise<void>;
+  removeLike(internalId: string, userId: string): Promise<void>;
+  listComments(internalId: string, limit: number): Promise<CommentRecord[]>;
+  createComment(internalId: string, userId: string, content: string, now: string): Promise<CommentRecord>;
+  findComment(commentId: string): Promise<CommentRecord | null>;
+  updateComment(commentId: string, content: string, now: string): Promise<CommentRecord | null>;
+  deleteComment(commentId: string): Promise<CommentRecord | null>;
 }

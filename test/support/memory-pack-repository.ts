@@ -1,5 +1,5 @@
 import type { PackRepository } from "../../src/repositories/pack-repository";
-import type { PackCreateData, PackRecord, PackUpdateData, PackViewerState } from "../../src/types";
+import type { CommentRecord, PackCreateData, PackRecord, PackUpdateData, PackViewerState } from "../../src/types";
 
 interface StoredPack extends Omit<PackRecord, "ownerDisplayName" | "ratingAverage" | "ratingCount"> {}
 
@@ -11,6 +11,8 @@ export class MemoryPackRepository implements PackRepository {
   private readonly packs = new Map<string, StoredPack>();
   private readonly ratings = new Map<string, Map<string, number>>();
   readonly favorites = new Set<string>();
+  readonly likes = new Set<string>();
+  private readonly comments = new Map<string, CommentRecord>();
 
   async userExists(userId: string): Promise<boolean> {
     return this.users.has(userId);
@@ -50,6 +52,8 @@ export class MemoryPackRepository implements PackRepository {
     const scores = [...(this.ratings.get(pack.internalId)?.values() ?? [])];
     return {
       ...pack,
+      likeCount: [...this.likes].filter((key) => key.startsWith(`${pack.internalId}:`)).length,
+      commentCount: [...this.comments.values()].filter((comment) => comment.packId === pack.shareId).length,
       beatmapsetIds: [...pack.beatmapsetIds],
       ownerDisplayName: this.users.get(pack.ownerId)!,
       ratingAverage: scores.length ? scores.reduce((sum, score) => sum + score, 0) / scores.length : 0,
@@ -61,6 +65,7 @@ export class MemoryPackRepository implements PackRepository {
     return {
       rating: this.ratings.get(internalId)?.get(userId) ?? null,
       favorited: this.favorites.has(`${internalId}:${userId}`),
+      liked: this.likes.has(`${internalId}:${userId}`),
     };
   }
 
@@ -94,4 +99,18 @@ export class MemoryPackRepository implements PackRepository {
   async removeFavorite(internalId: string, userId: string): Promise<void> {
     this.favorites.delete(`${internalId}:${userId}`);
   }
+
+  async addLike(internalId: string, userId: string): Promise<void> { this.likes.add(`${internalId}:${userId}`); }
+  async removeLike(internalId: string, userId: string): Promise<void> { this.likes.delete(`${internalId}:${userId}`); }
+  async listComments(internalId: string, limit: number): Promise<CommentRecord[]> {
+    return [...this.comments.values()].filter((c) => c.packId === [...this.packs.values()].find((p) => p.internalId === internalId)?.shareId).slice(0, limit);
+  }
+  async createComment(internalId: string, userId: string, content: string, now: string): Promise<CommentRecord> {
+    const pack = [...this.packs.values()].find((p) => p.internalId === internalId)!;
+    const comment = { id: crypto.randomUUID(), packId: pack.shareId, userId, userDisplayName: this.users.get(userId)!, content, createdAt: now, updatedAt: now };
+    this.comments.set(comment.id, comment); return comment;
+  }
+  async findComment(commentId: string): Promise<CommentRecord | null> { return this.comments.get(commentId) ?? null; }
+  async updateComment(commentId: string, content: string, now: string): Promise<CommentRecord | null> { const c = this.comments.get(commentId); if (!c) return null; c.content = content; c.updatedAt = now; return c; }
+  async deleteComment(commentId: string): Promise<CommentRecord | null> { const c = this.comments.get(commentId); if (!c) return null; this.comments.delete(commentId); return c; }
 }

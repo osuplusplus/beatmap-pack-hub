@@ -1,5 +1,5 @@
 import type { PackRepository } from "./pack-repository";
-import type { PackCreateData, PackRecord, PackUpdateData, PackViewerState } from "../types";
+import type { CommentRecord, PackCreateData, PackRecord, PackUpdateData, PackViewerState } from "../types";
 
 interface PackRow {
   internal_id: string;
@@ -50,7 +50,7 @@ export class D1PackRepository implements PackRepository {
              p.title, p.description, p.is_private, p.manifest_hash, p.created_at, p.updated_at,
              AVG(r.score) AS rating_average, COUNT(DISTINCT r.user_id) AS rating_count,
              (SELECT COUNT(*) FROM pack_likes pl WHERE pl.pack_id = p.id) AS like_count,
-             (SELECT COUNT(*) FROM pack_comments pc WHERE pc.pack_id = p.id) AS comment_count
+             (SELECT COUNT(*) FROM pack_comments pc WHERE pc.pack_id = p.id AND pc.deleted_at IS NULL) AS comment_count
       FROM packs p
       JOIN users u ON u.id = p.owner_id
       LEFT JOIN ratings r ON r.pack_id = p.id
@@ -98,11 +98,13 @@ export class D1PackRepository implements PackRepository {
       SELECT
         (SELECT score FROM ratings WHERE pack_id = ? AND user_id = ?) AS rating,
         EXISTS(SELECT 1 FROM favorites WHERE pack_id = ? AND user_id = ?) AS favorited
-    `).bind(internalId, userId, internalId, userId).first<{ rating: number | null; favorited: number }>();
+        ,EXISTS(SELECT 1 FROM pack_likes WHERE pack_id = ? AND user_id = ?) AS liked
+    `).bind(internalId, userId, internalId, userId, internalId, userId).first<{ rating: number | null; favorited: number; liked: number }>();
 
     return {
       rating: row?.rating ?? null,
       favorited: row?.favorited === 1,
+      liked: row?.liked === 1,
     };
   }
 
@@ -141,5 +143,45 @@ export class D1PackRepository implements PackRepository {
   async removeFavorite(internalId: string, userId: string): Promise<void> {
     await this.db.prepare("DELETE FROM favorites WHERE pack_id = ? AND user_id = ?")
       .bind(internalId, userId).run();
+  }
+
+  async addLike(internalId: string, userId: string, now: string): Promise<void> {
+    await this.db.prepare("INSERT INTO pack_likes (pack_id, user_id, created_at) VALUES (?, ?, ?) ON CONFLICT(pack_id, user_id) DO NOTHING").bind(internalId, userId, now).run();
+  }
+
+  async removeLike(internalId: string, userId: string): Promise<void> {
+    await this.db.prepare("DELETE FROM pack_likes WHERE pack_id = ? AND user_id = ?").bind(internalId, userId).run();
+  }
+
+  private mapComment(row: any): CommentRecord {
+    return { id: row.id, packId: row.share_id, userId: row.user_id, userDisplayName: row.display_name, content: row.content, createdAt: row.created_at, updatedAt: row.updated_at };
+  }
+
+  async listComments(internalId: string, limit: number): Promise<CommentRecord[]> {
+    const rows = await this.db.prepare(`SELECT pc.*, p.share_id, u.display_name FROM pack_comments pc JOIN packs p ON p.id = pc.pack_id JOIN users u ON u.id = pc.user_id WHERE pc.pack_id = ? AND pc.deleted_at IS NULL ORDER BY pc.created_at ASC LIMIT ?`).bind(internalId, limit).all();
+    return rows.results.map((row) => this.mapComment(row));
+  }
+
+  async createComment(internalId: string, userId: string, content: string, now: string): Promise<CommentRecord> {
+    const id = crypto.randomUUID();
+    await this.db.prepare("INSERT INTO pack_comments (id, pack_id, user_id, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)").bind(id, internalId, userId, content, now, now).run();
+    return (await this.findComment(id))!;
+  }
+
+  async findComment(commentId: string): Promise<CommentRecord | null> {
+    const row = await this.db.prepare("SELECT pc.*, p.share_id, u.display_name FROM pack_comments pc JOIN packs p ON p.id = pc.pack_id JOIN users u ON u.id = pc.user_id WHERE pc.id = ? AND pc.deleted_at IS NULL").bind(commentId).first();
+    return row ? this.mapComment(row) : null;
+  }
+
+  async updateComment(commentId: string, content: string, now: string): Promise<CommentRecord | null> {
+    await this.db.prepare("UPDATE pack_comments SET content = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL").bind(content, now, commentId).run();
+    return this.findComment(commentId);
+  }
+
+  async deleteComment(commentId: string): Promise<CommentRecord | null> {
+    const current = await this.findComment(commentId);
+    if (!current) return null;
+    await this.db.prepare("UPDATE pack_comments SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL").bind(new Date().toISOString(), commentId).run();
+    return current;
   }
 }

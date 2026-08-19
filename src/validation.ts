@@ -23,6 +23,12 @@ export const ratingSchema = z.object({
   score: z.number().int().min(1).max(5),
 }).strict();
 
+export const commentSchema = z.object({
+  content: z.string().trim().min(1).max(2_000),
+}).strict();
+
+export const updateCommentSchema = commentSchema;
+
 const publicKey = z.string().regex(/^[A-Za-z0-9_-]{43}$/, "Expected a base64url-encoded Ed25519 public key");
 const signature = z.string().regex(/^[A-Za-z0-9_-]{86}$/, "Expected a base64url-encoded Ed25519 signature");
 
