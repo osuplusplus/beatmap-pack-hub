@@ -76,6 +76,14 @@ export class PackService {
     };
   }
 
+  async manifest(shareId: string, viewerId: string | null = null): Promise<{ manifest_hash: string }> {
+    const pack = await this.repository.findManifestByShareId(shareId);
+    if (!pack) throw notFound();
+    if (viewerId) await this.assertUser(viewerId);
+    if (pack.isPrivate && pack.ownerId !== viewerId) throw notFound();
+    return { manifest_hash: pack.manifestHash };
+  }
+
   async update(userId: string, shareId: string, input: UpdatePackInput): Promise<void> {
     await this.assertUser(userId);
     const current = await this.repository.findByShareId(shareId);

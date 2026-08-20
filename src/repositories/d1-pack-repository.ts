@@ -1,5 +1,5 @@
 import type { PackRepository } from "./pack-repository";
-import type { CommentRecord, PackCreateData, PackRecord, PackUpdateData, PackViewerState } from "../types";
+import type { CommentRecord, PackCreateData, PackManifestRecord, PackRecord, PackUpdateData, PackViewerState } from "../types";
 
 interface PackRow {
   internal_id: string;
@@ -79,6 +79,22 @@ export class D1PackRepository implements PackRepository {
       updatedAt: row.updated_at,
       likeCount: row.like_count,
       commentCount: row.comment_count,
+    };
+  }
+
+  async findManifestByShareId(shareId: string): Promise<PackManifestRecord | null> {
+    const row = await this.db.prepare(`
+      SELECT owner_id, is_private, manifest_hash
+      FROM packs
+      WHERE share_id = ?
+      LIMIT 1
+    `).bind(shareId).first<{ owner_id: string; is_private: number; manifest_hash: string }>();
+    if (!row) return null;
+
+    return {
+      ownerId: row.owner_id,
+      isPrivate: row.is_private === 1,
+      manifestHash: row.manifest_hash,
     };
   }
 

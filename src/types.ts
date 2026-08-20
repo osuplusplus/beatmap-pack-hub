@@ -23,6 +23,18 @@ export interface PackRecord {
   commentCount: number;
 }
 
+/**
+ * The minimum information needed to validate a cached pack manifest.
+ *
+ * `manifestHash` identifies the ordered, de-duplicated beatmapset list; it
+ * intentionally does not change for social metadata such as ratings or likes.
+ */
+export interface PackManifestRecord {
+  ownerId: string;
+  isPrivate: boolean;
+  manifestHash: string;
+}
+
 export interface PackCreateData {
   internalId: string;
   shareId: string;

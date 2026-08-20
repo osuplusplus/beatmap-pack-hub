@@ -109,8 +109,8 @@ export function createApp(
   app.use("*", cors({
     origin: "*",
     allowMethods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-    allowHeaders: ["Authorization", "Content-Type", "X-BPH-User-ID", "X-Request-ID"],
-    exposeHeaders: ["X-Request-ID"],
+    allowHeaders: ["Authorization", "Content-Type", "If-None-Match", "X-BPH-User-ID", "X-Request-ID"],
+    exposeHeaders: ["ETag", "X-Beatmap-Manifest-Hash", "X-Request-ID"],
     maxAge: 86_400,
   }));
 
@@ -231,6 +231,19 @@ export function createApp(
   };
   app.get("/api/v1/packs/search", search);
   app.get("/api/v1/search", search);
+
+  app.on(["GET", "HEAD"], "/api/v1/packs/:shareId/hash", async (c) => {
+    c.header("Vary", "X-BPH-User-ID, Origin");
+    const viewerId = await identity(c.req.raw.headers, c.env, authService(c.env), false);
+    const manifest = await service(c.env).manifest(requireShareId(c.req.param("shareId")), viewerId);
+    const etag = `\"${manifest.manifest_hash}\"`;
+    c.header("ETag", etag);
+    c.header("X-Beatmap-Manifest-Hash", manifest.manifest_hash);
+    c.header("Cache-Control", viewerId ? "no-store" : "public, max-age=300, stale-while-revalidate=60");
+    if (c.req.header("If-None-Match") === etag) return c.body(null, 304);
+    if (c.req.method === "HEAD") return c.body(null, 200);
+    return c.json(manifest);
+  });
 
   app.get("/api/v1/packs/:shareId", async (c) => {
     c.header("Vary", "X-BPH-User-ID, Origin");

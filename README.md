@@ -366,6 +366,22 @@ GET /api/v1/packs/:share_id
 
 响应还包含 `is_private`、`likes.count` 和 `comments.count`。私有 Pack 只有 owner 携带认证后可读取，其他请求统一返回 `404`，避免泄露对象存在性。
 
+### 预检 Pack 缓存
+
+```http
+GET /api/v1/packs/:share_id/hash
+```
+
+该轻量接口只返回曲包有序 `beatmapset_id` 清单的 SHA-256：
+
+```json
+{
+  "manifest_hash": "sha256-hex-value"
+}
+```
+
+客户端应先调用此接口，将返回值与本地缓存的 `manifest_hash` 比较；相同则继续使用本地曲包数据，不同才调用 `GET /api/v1/packs/:share_id` 获取完整清单。也可以携带 `If-None-Match: "<manifest_hash>"`，未变化时服务端返回 `304 Not Modified`；`HEAD` 请求可从 `X-Beatmap-Manifest-Hash` 响应头读取 hash 而不接收响应体。私有 Pack 的预检同样要求 owner 身份。
+
 ### 获取推荐曲包
 
 ```http

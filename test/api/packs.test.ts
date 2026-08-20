@@ -48,6 +48,36 @@ describe("pack API", () => {
     expect(cached.status).toBe(304);
   });
 
+  it("returns only the manifest hash before a client fetches a pack", async () => {
+    const id = await createPack();
+    const hashResponse = await app.request(`/api/v1/packs/${id}/hash`, {}, env);
+    expect(hashResponse.status).toBe(200);
+    const manifest = await hashResponse.json() as { manifest_hash: string };
+    expect(manifest).toEqual({ manifest_hash: expect.stringMatching(/^[a-f0-9]{64}$/) });
+    expect(hashResponse.headers.get("etag")).toBe(`\"${manifest.manifest_hash}\"`);
+
+    const unchanged = await app.request(`/api/v1/packs/${id}/hash`, {
+      headers: { "If-None-Match": `\"${manifest.manifest_hash}\"` },
+    }, env);
+    expect(unchanged.status).toBe(304);
+
+    const head = await app.request(`/api/v1/packs/${id}/hash`, { method: "HEAD" }, env);
+    expect(head.status).toBe(200);
+    expect(head.headers.get("x-beatmap-manifest-hash")).toBe(manifest.manifest_hash);
+    expect(await head.text()).toBe("");
+
+    const privateResponse = await app.request("/api/v1/packs", {
+      method: "POST",
+      headers: { "content-type": "application/json", "X-BPH-User-ID": "dev-user" },
+      body: JSON.stringify({ title: "Private cache", beatmapset_ids: [99], is_private: true }),
+    }, env);
+    const privateId = (await privateResponse.json() as { id: string }).id;
+    expect((await app.request(`/api/v1/packs/${privateId}/hash`, {}, env)).status).toBe(404);
+    expect((await app.request(`/api/v1/packs/${privateId}/hash`, {
+      headers: { "X-BPH-User-ID": "dev-user" },
+    }, env)).status).toBe(200);
+  });
+
   it("lists public recommendations and hides private packs", async () => {
     await createPack();
     const privateResponse = await app.request("/api/v1/packs", {
@@ -164,6 +194,7 @@ describe("pack API", () => {
     expect(preflight.status).toBe(204);
     expect(preflight.headers.get("access-control-allow-origin")).toBe("*");
     expect(preflight.headers.get("access-control-allow-headers")).toContain("X-BPH-User-ID");
+    expect(preflight.headers.get("access-control-allow-headers")).toContain("If-None-Match");
     expect(preflight.headers.get("x-request-id")).toBeTruthy();
   });
 

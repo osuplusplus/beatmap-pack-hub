@@ -1,10 +1,11 @@
-import type { CommentRecord, PackCreateData, PackRecord, PackUpdateData, PackViewerState } from "../types";
+import type { CommentRecord, PackCreateData, PackManifestRecord, PackRecord, PackUpdateData, PackViewerState } from "../types";
 
 export interface PackRepository {
   userExists(userId: string): Promise<boolean>;
   shareIdExists(shareId: string): Promise<boolean>;
   create(data: PackCreateData): Promise<void>;
   findByShareId(shareId: string): Promise<PackRecord | null>;
+  findManifestByShareId(shareId: string): Promise<PackManifestRecord | null>;
   listPublic(limit: number): Promise<PackRecord[]>;
   searchPublic(query: string, limit: number): Promise<PackRecord[]>;
   getViewerState(internalId: string, userId: string): Promise<PackViewerState>;
